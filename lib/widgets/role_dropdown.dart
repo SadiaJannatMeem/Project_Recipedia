@@ -25,4 +25,5 @@ class RoleDropdown extends StatelessWidget {
       ],
       onChanged: onChanged,
     );
+  }
 }
