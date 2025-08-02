@@ -19,6 +19,7 @@ class MyApp extends StatelessWidget {
       title: 'Recipedia',
       debugShowCheckedModeBanner: false,
       theme: ThemeData(
+        fontFamily: "Poppins" ,
         colorScheme: ColorScheme.fromSeed(seedColor: Colors.green),
         useMaterial3: true,
       ),
