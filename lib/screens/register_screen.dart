@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:recipedia/screens/my_app_home_screen.dart';
 import '../widgets/role_dropdown.dart';
 import 'home_screen.dart';
 
@@ -49,7 +50,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
 
       Navigator.pushReplacement(
         context,
-        MaterialPageRoute(builder: (_) => const HomeScreen()),
+        MaterialPageRoute(builder: (_) => const MyAppHomeScreen()),
       );
     } catch (e) {
       ScaffoldMessenger.of(context).showSnackBar(
