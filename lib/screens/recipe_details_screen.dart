@@ -1,59 +1,81 @@
 import 'package:flutter/material.dart';
-import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
-
-import '../Utils/constants.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import '../recipe_model.dart';
+import 'upload_recipe_screen.dart';
+import '../services/cloudinary_service.dart';
 
 class RecipeDetailsScreen extends StatefulWidget {
   final RecipeModel recipe;
+  final bool? isInitiallyFavorite;
 
-  const RecipeDetailsScreen({super.key, required this.recipe});
+  const RecipeDetailsScreen({
+    super.key,
+    required this.recipe,
+    this.isInitiallyFavorite,
+  });
 
   @override
   State<RecipeDetailsScreen> createState() => _RecipeDetailsScreenState();
 }
 
 class _RecipeDetailsScreenState extends State<RecipeDetailsScreen> {
+  late RecipeModel recipe;
   bool _isFavorite = false;
   int servings = 1;
-
+  late List<String> baseIngredients;
   late List<String> adjustedIngredients;
+  bool isAdmin = false;
+  bool isLoading = false;
+
+  final CloudinaryService _cloudinaryService = CloudinaryService();
 
   @override
   void initState() {
     super.initState();
-    _loadFavorite();
+    recipe = widget.recipe;
     servings = 1;
+    baseIngredients = List.from(recipe.ingredients);
     adjustedIngredients = _scaleIngredients(servings);
+
+    if (widget.isInitiallyFavorite != null) {
+      _isFavorite = widget.isInitiallyFavorite!;
+    } else {
+      _loadFavorite();
+    }
+
+    _checkAdmin();
+  }
+
+  Future<void> _checkAdmin() async {
+    final admin = await isCurrentUserAdmin();
+    if (mounted) {
+      setState(() {
+        isAdmin = admin;
+      });
+    }
   }
 
   Future<void> _loadFavorite() async {
-    final fav = await isFavorite(widget.recipe.id);
-    setState(() {
-      _isFavorite = fav;
-    });
-  }
-
-  Future<void> _toggleFavorite() async {
-    await toggleFavorite(widget.recipe);
-    setState(() {
-      _isFavorite = !_isFavorite;
-    });
-  }
-
-  Future<bool> isFavorite(String recipeId) async {
     final userId = FirebaseAuth.instance.currentUser!.uid;
     final doc = await FirebaseFirestore.instance
         .collection('users')
         .doc(userId)
         .collection('favorites')
-        .doc(recipeId)
+        .doc(recipe.id)
         .get();
-    return doc.exists;
+    if (mounted) {
+      setState(() {
+        _isFavorite = doc.exists;
+      });
+    }
   }
 
-  Future<void> toggleFavorite(RecipeModel recipe) async {
+  Future<void> _toggleFavorite() async {
+    setState(() {
+      _isFavorite = !_isFavorite;
+    });
+
     final userId = FirebaseAuth.instance.currentUser!.uid;
     final docRef = FirebaseFirestore.instance
         .collection('users')
@@ -61,43 +83,51 @@ class _RecipeDetailsScreenState extends State<RecipeDetailsScreen> {
         .collection('favorites')
         .doc(recipe.id);
 
-    final doc = await docRef.get();
-    if (doc.exists) {
-      await docRef.delete();
-    } else {
-      await docRef.set(recipe.toMap());
+    try {
+      if (_isFavorite) {
+        await docRef.set(recipe.toMap());
+      } else {
+        await docRef.delete();
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() {
+          _isFavorite = !_isFavorite;
+        });
+      }
     }
   }
 
   List<String> _scaleIngredients(int servings) {
-    List<String> scaled = [];
-
-    for (var ing in widget.recipe.ingredients) {
-      final regex = RegExp(r'(.*)\s*\(([\d./]+)\)$');
-      final match = regex.firstMatch(ing.trim());
-      if (match != null) {
-        String name = match.group(1)!.trim();
-        String qtyStr = match.group(2)!;
-
+    return baseIngredients.map((ingredient) {
+      final quantityMatch = RegExp(r'(\d+\s\d+/\d+|\d+/\d+|\d+(\.\d+)?)').firstMatch(ingredient);
+      if (quantityMatch != null) {
+        String qtyStr = quantityMatch.group(0)!;
         double qty = _parseQuantity(qtyStr);
         double scaledQty = qty * servings;
-
-        String scaledQtyStr = scaledQty % 1 == 0
-            ? scaledQty.toInt().toString()
-            : scaledQty.toStringAsFixed(2);
-
-        scaled.add('$name ($scaledQtyStr)');
-      } else {
-        scaled.add(ing);
+        String scaledQtyStr = _toMixedFraction(scaledQty);
+        return ingredient.replaceFirst(qtyStr, scaledQtyStr);
       }
-    }
-
-    return scaled;
+      return ingredient;
+    }).toList();
   }
 
-  double _parseQuantity(String qtyStr) {
-    if (qtyStr.contains('/')) {
-      var parts = qtyStr.split('/');
+  double _parseQuantity(String input) {
+    input = input.trim();
+    if (input.contains(' ')) {
+      var parts = input.split(' ');
+      if (parts.length == 2) {
+        double whole = double.tryParse(parts[0]) ?? 0;
+        double frac = _parseFraction(parts[1]);
+        return whole + frac;
+      }
+    }
+    return _parseFraction(input);
+  }
+
+  double _parseFraction(String input) {
+    if (input.contains('/')) {
+      var parts = input.split('/');
       if (parts.length == 2) {
         double numerator = double.tryParse(parts[0]) ?? 0;
         double denominator = double.tryParse(parts[1]) ?? 1;
@@ -106,178 +136,163 @@ class _RecipeDetailsScreenState extends State<RecipeDetailsScreen> {
         }
       }
     }
-    return double.tryParse(qtyStr) ?? 0;
+    return double.tryParse(input) ?? 0;
   }
 
-  void _increaseServings() {
+  String _toMixedFraction(double value) {
+    const double tolerance = 0.01;
+    int whole = value.floor();
+    double frac = value - whole;
+
+    Map<double, String> commonFractions = {
+      0.25: "1/4",
+      0.33: "1/3",
+      0.5: "1/2",
+      0.66: "2/3",
+      0.75: "3/4"
+    };
+
+    if (frac < tolerance) return whole.toString();
+
+    for (var entry in commonFractions.entries) {
+      if ((frac - entry.key).abs() < tolerance) {
+        if (whole == 0) return entry.value;
+        return "$whole ${entry.value}";
+      }
+    }
+
+    return value.toStringAsFixed(2);
+  }
+
+  void _updateServings(bool increase) {
     setState(() {
-      servings++;
+      if (increase) {
+        servings++;
+      } else if (servings > 1) {
+        servings--;
+      }
       adjustedIngredients = _scaleIngredients(servings);
     });
   }
 
-  void _decreaseServings() {
-    if (servings > 1) {
-      setState(() {
-        servings--;
-        adjustedIngredients = _scaleIngredients(servings);
-      });
+  Future<void> _refreshRecipe() async {
+    setState(() {
+      isLoading = true;
+    });
+    try {
+      final doc = await FirebaseFirestore.instance.collection('recipes').doc(recipe.id).get();
+      if (doc.exists) {
+        final data = doc.data()!;
+        final updatedRecipe = RecipeModel.fromMap(data, doc.id);
+        if (mounted) {
+          setState(() {
+            recipe = updatedRecipe;
+            baseIngredients = List.from(recipe.ingredients);
+            adjustedIngredients = _scaleIngredients(servings);
+          });
+        }
+      }
+    } catch (e) {
+      // Handle error or ignore
+    } finally {
+      if (mounted) {
+        setState(() {
+          isLoading = false;
+        });
+      }
     }
+  }
+
+  void _editRecipe() {
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => UploadRecipeScreen(
+          isEditing: true,
+          recipeToEdit: recipe,
+        ),
+      ),
+    ).then((value) {
+      if (value == true) {
+        _refreshRecipe(); // refresh after editing
+      }
+    });
   }
 
   @override
   Widget build(BuildContext context) {
-    final recipe = widget.recipe;
-
     return Scaffold(
       appBar: AppBar(
         title: Text(recipe.name),
-        backgroundColor: kPrimaryColor,
+        actions: [
+          IconButton(
+            icon: Icon(
+              _isFavorite ? Icons.favorite : Icons.favorite_border,
+              color: _isFavorite ? Colors.red : Colors.white,
+            ),
+            onPressed: _toggleFavorite,
+          ),
+          if (isAdmin)
+            IconButton(
+              icon: const Icon(Icons.edit),
+              tooltip: "Edit Recipe",
+              onPressed: _editRecipe,
+            ),
+        ],
       ),
-      body: SingleChildScrollView(
+      body: isLoading
+          ? const Center(child: CircularProgressIndicator())
+          : SingleChildScrollView(
         padding: const EdgeInsets.all(16),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // Recipe Image
-            ClipRRect(
-              borderRadius: BorderRadius.circular(12),
-              child: Image.network(
-                recipe.imageUrl,
-                width: double.infinity,
-                height: 200,
-                fit: BoxFit.cover,
-              ),
-            ),
-            const SizedBox(height: 12),
-
-            // Title + Favorite Button
+            Image.network(recipe.imageUrl),
+            const SizedBox(height: 10),
+            Text(recipe.category, style: const TextStyle(fontSize: 16, color: Colors.grey)),
+            const SizedBox(height: 10),
+            Text("Calories: ${recipe.calories}", style: const TextStyle(fontSize: 16)),
+            Text("Time: ${recipe.time}", style: const TextStyle(fontSize: 16)),
+            Text("Bulk Cooking: ${recipe.bulkCooking}", style: const TextStyle(fontSize: 16)),
+            const SizedBox(height: 20),
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
-                Expanded(
-                  child: Text(
-                    recipe.name,
-                    style: const TextStyle(
-                      fontSize: 22,
-                      fontWeight: FontWeight.bold,
-                    ),
-                  ),
-                ),
-                IconButton(
-                  icon: Icon(
-                    _isFavorite ? Icons.favorite : Icons.favorite_border,
-                    color: Colors.red,
-                    size: 28,
-                  ),
-                  onPressed: _toggleFavorite,
-                ),
-              ],
-            ),
-
-            const SizedBox(height: 8),
-
-            // Use Wrap here instead of Row to prevent overflow
-            Wrap(
-              spacing: 16,
-              crossAxisAlignment: WrapCrossAlignment.center,
-              children: [
-                Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: const [
-                    Icon(Icons.timer, size: 18),
-                    SizedBox(width: 4),
-                    // Text('${recipe.time} min'), // Can't use const here due to variable, so remove const on parent
-                  ],
-                ),
-                Text('${recipe.time} min'),
-                Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: const [
-                    Icon(Icons.local_fire_department, size: 18),
-                    SizedBox(width: 4),
-                  ],
-                ),
-                Text('${recipe.calories} kcal'),
-                Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: const [
-                    Icon(Icons.kitchen, size: 18),
-                    SizedBox(width: 4),
-                  ],
-                ),
-                Text('Bulk Cooking: ${recipe.bulkCooking}'),
-              ],
-            ),
-
-            const SizedBox(height: 16),
-
-            // Filters as Chips
-            if (recipe.filters.isNotEmpty) ...[
-              const Text(
-                'Filters:',
-                style: TextStyle(fontSize: 18, fontWeight: FontWeight.w600),
-              ),
-              const SizedBox(height: 8),
-              Wrap(
-                spacing: 8,
-                children: recipe.filters
-                    .map((f) => Chip(label: Text(f)))
-                    .toList(),
-              ),
-              const SizedBox(height: 16),
-            ],
-
-            // Servings Adjuster
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                const Text(
-                  'Servings:',
-                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.w600),
-                ),
+                const Text("Servings:", style: TextStyle(fontSize: 18)),
                 Row(
                   children: [
-                    IconButton(
-                      icon: const Icon(Icons.remove_circle_outline),
-                      onPressed: _decreaseServings,
-                    ),
-                    Text(
-                      servings.toString(),
-                      style: const TextStyle(fontSize: 18),
-                    ),
-                    IconButton(
-                      icon: const Icon(Icons.add_circle_outline),
-                      onPressed: _increaseServings,
-                    ),
+                    IconButton(icon: const Icon(Icons.remove), onPressed: () => _updateServings(false)),
+                    Text(servings.toString(), style: const TextStyle(fontSize: 18)),
+                    IconButton(icon: const Icon(Icons.add), onPressed: () => _updateServings(true)),
                   ],
                 ),
               ],
             ),
-
-            const SizedBox(height: 8),
-
-            // Ingredients List (scaled)
-            const Text(
-              'Ingredients:',
-              style: TextStyle(fontSize: 18, fontWeight: FontWeight.w600),
-            ),
-            const SizedBox(height: 8),
-            for (final ingredient in adjustedIngredients)
-              Text('• $ingredient'),
-
-            const SizedBox(height: 16),
-
-            // Instructions
-            const Text(
-              'Instructions:',
-              style: TextStyle(fontSize: 18, fontWeight: FontWeight.w600),
-            ),
-            const SizedBox(height: 8),
+            const SizedBox(height: 20),
+            const Text("Ingredients:", style: TextStyle(fontSize: 18)),
+            ...adjustedIngredients.map((e) => Text("• $e")),
+            const SizedBox(height: 20),
+            const Text("Instructions:", style: TextStyle(fontSize: 18)),
             Text(recipe.instructions),
           ],
         ),
       ),
     );
   }
+}
+
+// Helper to check admin role by user document field "role"
+Future<bool> isCurrentUserAdmin() async {
+  final user = FirebaseAuth.instance.currentUser;
+  if (user == null) return false;
+
+  final userDoc = await FirebaseFirestore.instance.collection('users').doc(user.uid).get();
+
+  if (userDoc.exists) {
+    final data = userDoc.data();
+    if (data != null && data['role'] == 'admin') {
+      return true;
+    }
+  }
+  return false;
 }
