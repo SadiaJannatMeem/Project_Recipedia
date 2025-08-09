@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:firebase_core/firebase_core.dart';
+import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:recipedia/screens/SplashScreen.dart';
 import 'package:recipedia/screens/upload_recipe_screen.dart';
 import 'firebase_options.dart';
@@ -7,9 +8,12 @@ import 'screens/search_screen.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
+
   await Firebase.initializeApp(
     options: DefaultFirebaseOptions.currentPlatform,
   );
+  await dotenv.load(fileName: ".env");
+
   runApp(const MyApp());
 }
 

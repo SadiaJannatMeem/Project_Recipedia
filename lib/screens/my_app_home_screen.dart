@@ -2,10 +2,10 @@ import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:iconsax/iconsax.dart';
-import 'package:recipedia/screens/ViewAllRecipesScreen.dart';
 
 import '../Utils/constants.dart';
 import '../recipe_model.dart';
+import 'ViewAllRecipesScreen.dart';
 import 'search_screen.dart';
 import 'favorites_screen.dart';
 import 'settings_screen.dart';
@@ -54,7 +54,6 @@ class _MyAppHomeScreenState extends State<MyAppHomeScreen> {
     });
   }
 
-  // Home tab widget
   Widget _homeTab() {
     return SafeArea(
       child: Padding(
@@ -65,20 +64,33 @@ class _MyAppHomeScreenState extends State<MyAppHomeScreen> {
             const SizedBox(height: 16),
             const Text(
               "What are you\ncooking today?",
-              style: TextStyle(fontSize: 28, fontWeight: FontWeight.bold, height: 1),
+              style: TextStyle(
+                fontSize: 28,
+                fontWeight: FontWeight.bold,
+                height: 1,
+              ),
             ),
             const SizedBox(height: 12),
             GestureDetector(
               onTap: () {
                 Navigator.push(
                     context,
-                    MaterialPageRoute(builder: (_) => const SearchScreen()));
+                    MaterialPageRoute(
+                        builder: (_) => const SearchScreen()));
               },
               child: Container(
-                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 14),
+                padding:
+                const EdgeInsets.symmetric(horizontal: 12, vertical: 14),
                 decoration: BoxDecoration(
                   color: Colors.white,
                   borderRadius: BorderRadius.circular(10),
+                  boxShadow: const [
+                    BoxShadow(
+                      color: Colors.black12,
+                      blurRadius: 4,
+                      offset: Offset(0, 2),
+                    ),
+                  ],
                 ),
                 child: Row(
                   children: const [
@@ -91,17 +103,18 @@ class _MyAppHomeScreenState extends State<MyAppHomeScreen> {
               ),
             ),
             const SizedBox(height: 20),
-
-            // Category Chips
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
-                const Text("Categories", style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold)),
+                const Text("Categories",
+                    style:
+                    TextStyle(fontSize: 20, fontWeight: FontWeight.bold)),
                 TextButton(
                   onPressed: () {
                     Navigator.push(
                       context,
-                      MaterialPageRoute(builder: (_) => const ViewAllRecipesScreen()),
+                      MaterialPageRoute(
+                          builder: (_) => const ViewAllRecipesScreen()),
                     );
                   },
                   child: const Text("View All"),
@@ -116,7 +129,8 @@ class _MyAppHomeScreenState extends State<MyAppHomeScreen> {
                 itemCount: categories.length,
                 itemBuilder: (context, i) {
                   final cat = categories[i];
-                  final isSelected = selectedCategory == cat;
+                  final isSelected =
+                      selectedCategory.toLowerCase() == cat.toLowerCase();
                   return Padding(
                     padding: const EdgeInsets.only(right: 8),
                     child: ChoiceChip(
@@ -133,22 +147,27 @@ class _MyAppHomeScreenState extends State<MyAppHomeScreen> {
               ),
             ),
             const SizedBox(height: 12),
-
-            // Recipes List
             Expanded(
               child: StreamBuilder<QuerySnapshot>(
-                stream: FirebaseFirestore.instance.collection('recipes').snapshots(),
+                stream:
+                FirebaseFirestore.instance.collection('recipes').snapshots(),
                 builder: (context, snapshot) {
-                  if (snapshot.connectionState == ConnectionState.waiting) {
+                  if (snapshot.connectionState ==
+                      ConnectionState.waiting) {
                     return const Center(child: CircularProgressIndicator());
                   }
 
                   final docs = snapshot.data?.docs ?? [];
                   final recipes = docs
-                      .map((doc) => RecipeModel.fromMap(doc.data() as Map<String, dynamic>, doc.id))
-                      .where((r) => selectedCategory == 'All' ||
-                      r.category.toLowerCase() == selectedCategory.toLowerCase())
-                      .toList();
+                      .map((doc) => RecipeModel.fromMap(
+                      doc.data() as Map<String, dynamic>, doc.id))
+                      .where((r) {
+                    if (selectedCategory.toLowerCase() == 'all') {
+                      return true;
+                    }
+                    return r.category.toLowerCase() ==
+                        selectedCategory.toLowerCase();
+                  }).toList();
 
                   if (recipes.isEmpty) {
                     return const Center(child: Text("No recipes found."));
@@ -160,6 +179,10 @@ class _MyAppHomeScreenState extends State<MyAppHomeScreen> {
                     itemBuilder: (context, index) {
                       final recipe = recipes[index];
                       return Card(
+                        elevation: 2,
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(10),
+                        ),
                         child: ListTile(
                           leading: ClipRRect(
                             borderRadius: BorderRadius.circular(8),
@@ -168,15 +191,20 @@ class _MyAppHomeScreenState extends State<MyAppHomeScreen> {
                               width: 60,
                               height: 60,
                               fit: BoxFit.cover,
+                              errorBuilder:
+                                  (context, error, stackTrace) =>
+                              const Icon(Icons.broken_image),
                             ),
                           ),
                           title: Text(recipe.name),
-                          subtitle: Text("${recipe.calories} kcal • ${recipe.time} min"),
+                          subtitle:
+                          Text("${recipe.calories} cal • ${recipe.time} min"),
                           onTap: () {
                             Navigator.push(
                               context,
                               MaterialPageRoute(
-                                builder: (_) => RecipeDetailsScreen(recipe: recipe),
+                                builder: (_) =>
+                                    RecipeDetailsScreen(recipe: recipe),
                               ),
                             );
                           },
@@ -186,16 +214,16 @@ class _MyAppHomeScreenState extends State<MyAppHomeScreen> {
                   );
                 },
               ),
-            )
+            ),
           ],
         ),
       ),
     );
   }
 
-  // Tab navigation options
   static const List<Widget> _widgetOptions = <Widget>[
-    Text('Home'), // Will be replaced dynamically
+    // Placeholder, Home is handled dynamically
+    Text('Home'),
     FavoritesScreen(),
     SettingsScreen(),
   ];

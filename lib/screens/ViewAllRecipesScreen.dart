@@ -60,7 +60,7 @@ class _ViewAllRecipesScreenState extends State<ViewAllRecipesScreen> {
                     final recipe = RecipeModel.fromMap(data, docs[index].id);
                     return ListTile(
                       title: Text(recipe.name),
-                      subtitle: Text('${recipe.calories} kcal • ${recipe.time} min'),
+                      subtitle: Text('${recipe.calories} cal • ${recipe.time} min'),
                       onTap: () {
                         Navigator.push(
                           context,
