@@ -1,4 +1,3 @@
-// search_screen.dart
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:recipedia/recipe_model.dart';
@@ -31,7 +30,7 @@ class _SearchScreenState extends State<SearchScreen> {
               ),
               onChanged: (val) {
                 setState(() {
-                  query = val.toLowerCase();
+                  query = val.trim().toLowerCase();
                 });
               },
             ),
@@ -46,10 +45,11 @@ class _SearchScreenState extends State<SearchScreen> {
                     value: maxCalories,
                     min: 100,
                     max: 2000,
-                    divisions: 20,
-                    label: '${maxCalories.round()} kcal',
+                    divisions: 19,
+                    label: '${maxCalories.round()} cal',
                     onChanged: (val) {
                       setState(() => maxCalories = val);
+                      debugPrint('Max calories updated: $val');
                     },
                   ),
                 ),
@@ -60,33 +60,52 @@ class _SearchScreenState extends State<SearchScreen> {
             child: StreamBuilder<QuerySnapshot>(
               stream: FirebaseFirestore.instance.collection('recipes').snapshots(),
               builder: (context, snapshot) {
-                if (!snapshot.hasData) return const Center(child: CircularProgressIndicator());
+                if (!snapshot.hasData) {
+                  return const Center(child: CircularProgressIndicator());
+                }
 
                 final docs = snapshot.data!.docs;
-                final results = docs
+
+                // Convert docs to RecipeModel list
+                final recipes = docs
                     .map((doc) => RecipeModel.fromMap(doc.data() as Map<String, dynamic>, doc.id))
-                    .where((recipe) {
-                  // calories stored as String, so convert to int safely
-                  int cal = int.tryParse(recipe.calories) ?? 99999;
-                  final matchesCalories = cal <= maxCalories.round();
+                    .toList();
 
-                  final matchesQuery = recipe.name.toLowerCase().contains(query) ||
-                      recipe.ingredients.any((ing) => ing.toLowerCase().contains(query));
+                // Filter recipes with fixed calorie parsing
+                final filteredRecipes = recipes.where((recipe) {
+                  int calories = 99999;
+                  try {
+                    // Remove non-digit chars like "k" from calories string
+                    final sanitized = recipe.calories.replaceAll(RegExp(r'[^0-9]'), '');
+                    calories = int.parse(sanitized);
+                  } catch (e) {
+                    debugPrint('Invalid calories for recipe ${recipe.id}: ${recipe.calories}');
+                  }
 
-                  return matchesCalories && matchesQuery;
+                  if (calories > maxCalories) return false;
+
+                  if (query.isEmpty) return true;
+
+                  final nameLower = recipe.name.toLowerCase();
+                  final ingredientsLower = recipe.ingredients.map((i) => i.toLowerCase()).toList();
+
+                  final nameMatches = nameLower.contains(query);
+                  final ingredientMatches = ingredientsLower.any((ing) => ing.contains(query));
+
+                  return nameMatches || ingredientMatches;
                 }).toList();
 
-                if (results.isEmpty) {
+                if (filteredRecipes.isEmpty) {
                   return const Center(child: Text('No recipes found.'));
                 }
 
                 return ListView.builder(
-                  itemCount: results.length,
+                  itemCount: filteredRecipes.length,
                   itemBuilder: (context, index) {
-                    final recipe = results[index];
+                    final recipe = filteredRecipes[index];
                     return ListTile(
                       title: Text(recipe.name),
-                      subtitle: Text('${recipe.calories} kcal • ${recipe.time}'),
+                      subtitle: Text('${recipe.calories} cal • ${recipe.time}'),
                       onTap: () {
                         Navigator.push(
                           context,
