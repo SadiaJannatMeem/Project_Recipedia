@@ -46,7 +46,7 @@ class _SearchScreenState extends State<SearchScreen> {
                     min: 100,
                     max: 2000,
                     divisions: 19,
-                    label: '${maxCalories.round()} kcal',
+                    label: '${maxCalories.round()} cal',
                     onChanged: (val) {
                       setState(() => maxCalories = val);
                       debugPrint('Max calories updated: $val');
@@ -105,7 +105,7 @@ class _SearchScreenState extends State<SearchScreen> {
                     final recipe = filteredRecipes[index];
                     return ListTile(
                       title: Text(recipe.name),
-                      subtitle: Text('${recipe.calories} kcal • ${recipe.time}'),
+                      subtitle: Text('${recipe.calories} cal • ${recipe.time}'),
                       onTap: () {
                         Navigator.push(
                           context,
