@@ -193,7 +193,7 @@ class _RecipeDetailsScreenState extends State<RecipeDetailsScreen> {
         }
       }
     } catch (e) {
-      // Handle error or ignore
+      // ignore error
     } finally {
       if (mounted) {
         setState(() {
@@ -214,7 +214,7 @@ class _RecipeDetailsScreenState extends State<RecipeDetailsScreen> {
       ),
     ).then((value) {
       if (value == true) {
-        _refreshRecipe(); // refresh after editing
+        _refreshRecipe();
       }
     });
   }
@@ -249,8 +249,27 @@ class _RecipeDetailsScreenState extends State<RecipeDetailsScreen> {
           children: [
             Image.network(recipe.imageUrl),
             const SizedBox(height: 10),
-            Text(recipe.category, style: const TextStyle(fontSize: 16, color: Colors.grey)),
-            const SizedBox(height: 10),
+            Text(
+              recipe.category,
+              style: const TextStyle(fontSize: 16, color: Colors.grey),
+            ),
+            const SizedBox(height: 6),
+
+            //  Display Filters
+            if (recipe.filters.isNotEmpty) ...[
+              Wrap(
+                spacing: 6,
+                runSpacing: 6,
+                children: recipe.filters
+                    .map((filter) => Chip(
+                  label: Text(filter),
+                  backgroundColor: Colors.green.shade100,
+                ))
+                    .toList(),
+              ),
+              const SizedBox(height: 10),
+            ],
+
             Text("Calories: ${recipe.calories}", style: const TextStyle(fontSize: 16)),
             Text("Time: ${recipe.time}", style: const TextStyle(fontSize: 16)),
             Text("Bulk Cooking: ${recipe.bulkCooking}", style: const TextStyle(fontSize: 16)),
@@ -281,13 +300,11 @@ class _RecipeDetailsScreenState extends State<RecipeDetailsScreen> {
   }
 }
 
-// Helper to check admin role by user document field "role"
 Future<bool> isCurrentUserAdmin() async {
   final user = FirebaseAuth.instance.currentUser;
   if (user == null) return false;
 
   final userDoc = await FirebaseFirestore.instance.collection('users').doc(user.uid).get();
-
   if (userDoc.exists) {
     final data = userDoc.data();
     if (data != null && data['role'] == 'admin') {
